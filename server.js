@@ -87,9 +87,10 @@ app.post('/auth/login', async (req, res) => {
 });
 
 // ==========================================
-// 🏥 ROTA DE CONFIGURAÇÃO DA CLÍNICA (White-Label) [cite: 119-122]
+// 🏥 CONFIGURAÇÃO DA CLÍNICA (White-Label)
 // ==========================================
 
+// 1. SALVAR configurações (POST)
 app.post('/clinica/config', verifyToken, isAdmin, async (req, res) => {
   const { nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email } = req.body;
 
@@ -115,22 +116,35 @@ app.post('/clinica/config', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
+// 2. LER configurações (GET) - ESSENCIAL PARA O FRONTEND
+app.get('/clinica/config', verifyToken, async (req, res) => {
+  try {
+    const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
+    const clinicId = userResult.rows[0].clinic_id;
+
+    if (!clinicId) return res.status(404).json({ error: "Clínica não associada." });
+
+    const result = await pool.query('SELECT * FROM clinicas WHERE id = $1', [clinicId]);
+
+    if (result.rows.length === 0) {
+      return res.json({ nome_fantasia: "MedicalPlus", cor_primaria: "#3b82f6", cor_secundaria: "#1e40af" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Erro ao buscar configurações." });
+  }
+});
+
 // ==========================================
 // 📋 MÓDULO DE PACIENTES
 // ==========================================
 
-// 1. Listar pacientes (apenas da clínica do usuário logado)
 app.get('/pacientes', verifyToken, async (req, res) => {
   try {
-    // Busca o clinic_id do usuário que está fazendo a requisição
     const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
     const clinicId = userResult.rows[0].clinic_id;
 
-    if (!clinicId) {
-      return res.status(400).json({ error: "Usuário não associado a uma clínica." });
-    }
-
-    // Busca apenas os pacientes dessa clínica
     const pacientes = await pool.query(
       'SELECT * FROM pacientes WHERE clinic_id = $1 ORDER BY nome_completo ASC',
       [clinicId]
@@ -138,17 +152,14 @@ app.get('/pacientes', verifyToken, async (req, res) => {
 
     res.json(pacientes.rows);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Erro ao buscar pacientes." });
   }
 });
 
-// 2. Cadastrar novo paciente
 app.post('/pacientes', verifyToken, async (req, res) => {
   const { nome_completo, cpf, rg, data_nascimento, telefone, endereco, alergias } = req.body;
 
   try {
-    // Recupera o clinic_id do usuário logado
     const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
     const clinicId = userResult.rows[0].clinic_id;
 
@@ -159,14 +170,14 @@ app.post('/pacientes', verifyToken, async (req, res) => {
       [nome_completo, cpf, rg, data_nascimento, telefone, endereco, alergias, clinicId]
     );
 
-    res.status(201).json({ message: "Paciente cadastrado com sucesso!", paciente: result.rows[0] });
+    res.status(201).json({ message: "Paciente cadastrado!", paciente: result.rows[0] });
   } catch (err) {
-    if (err.code === '23505') { // Código de erro para CPF duplicado no Postgres
-      return res.status(400).json({ error: "Este CPF já está cadastrado." });
-    }
-    console.error(err);
+    if (err.code === '23505') return res.status(400).json({ error: "CPF já cadastrado." });
     res.status(500).json({ error: "Erro ao cadastrar paciente." });
   }
 });
+
+// Mensagem de boas-vindas na raiz para teste de conexão
+app.get('/', (req, res) => res.send('🚀 Medical-API está online!'));
 
 app.listen(process.env.PORT || 3000, () => console.log("📡 API Pronta!"));
