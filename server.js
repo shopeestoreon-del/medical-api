@@ -92,27 +92,44 @@ app.post('/auth/login', async (req, res) => {
 
 // 1. SALVAR configurações (POST)
 app.post('/clinica/config', verifyToken, isAdmin, async (req, res) => {
-  const { nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email } = req.body;
+  const { 
+    nome_fantasia, razao_social, cnpj, logo_url, 
+    cor_primaria, cor_secundaria, telefone, email 
+  } = req.body;
 
   try {
+    // 1. Identifica a clínica pelo ID vinculado ao usuário (Segurança SaaS)
+    const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
+    const clinicId = userResult.rows[0].clinic_id;
+
+    if (!clinicId) {
+      return res.status(404).json({ error: "Clínica não associada ao seu usuário." });
+    }
+
+    // 2. Faz o UPDATE completo usando o ID como chave mestra
     const result = await pool.query(
-      `INSERT INTO clinicas (nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (cnpj) DO UPDATE SET
-       nome_fantasia = EXCLUDED.nome_fantasia,
-       razao_social = EXCLUDED.razao_social,
-       logo_url = EXCLUDED.logo_url,
-       cor_primaria = EXCLUDED.cor_primaria,
-       cor_secundaria = EXCLUDED.cor_secundaria,
-       telefone = EXCLUDED.telefone,
-       email = EXCLUDED.email
+      `UPDATE clinicas 
+       SET nome_fantasia = $1, 
+           razao_social = $2, 
+           cnpj = $3, 
+           logo_url = $4, 
+           cor_primaria = $5, 
+           cor_secundaria = $6, 
+           telefone = $7, 
+           email = $8
+       WHERE id = $9
        RETURNING id`,
-      [nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email]
+      [nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email, clinicId]
     );
 
-    res.json({ message: "Configurações da clínica salvas!", id: result.rows[0].id });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Clínica não encontrada no banco de dados." });
+    }
+
+    res.json({ message: "Configurações atualizadas com sucesso!" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Erro no banco:", err);
+    res.status(500).json({ error: "Erro interno ao salvar configurações." });
   }
 });
 
