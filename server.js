@@ -98,38 +98,35 @@ app.post('/clinica/config', verifyToken, isAdmin, async (req, res) => {
   } = req.body;
 
   try {
-    // 1. Identifica a clínica pelo ID vinculado ao usuário (Segurança SaaS)
+    // 1. Pegamos o ID da clínica que já está no cadastro do usuário
     const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
     const clinicId = userResult.rows[0].clinic_id;
 
     if (!clinicId) {
-      return res.status(404).json({ error: "Clínica não associada ao seu usuário." });
+      return res.status(404).json({ error: "Usuário não possui uma clínica vinculada." });
     }
 
-    // 2. Faz o UPDATE completo usando o ID como chave mestra
+    // 2. Lógica "UPSERT": Insere se não existir, atualiza se existir. Tudo pelo ID.
     const result = await pool.query(
-      `UPDATE clinicas 
-       SET nome_fantasia = $1, 
-           razao_social = $2, 
-           cnpj = $3, 
-           logo_url = $4, 
-           cor_primaria = $5, 
-           cor_secundaria = $6, 
-           telefone = $7, 
-           email = $8
-       WHERE id = $9
+      `INSERT INTO clinicas (id, nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (id) DO UPDATE SET
+         nome_fantasia = EXCLUDED.nome_fantasia,
+         razao_social = EXCLUDED.razao_social,
+         cnpj = EXCLUDED.cnpj,
+         logo_url = EXCLUDED.logo_url,
+         cor_primaria = EXCLUDED.cor_primaria,
+         cor_secundaria = EXCLUDED.cor_secundaria,
+         telefone = EXCLUDED.telefone,
+         email = EXCLUDED.email
        RETURNING id`,
-      [nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email, clinicId]
+      [clinicId, nome_fantasia, razao_social, cnpj, logo_url, cor_primaria, cor_secundaria, telefone, email]
     );
 
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: "Clínica não encontrada no banco de dados." });
-    }
-
-    res.json({ message: "Configurações atualizadas com sucesso!" });
+    res.json({ message: "Configurações salvas com sucesso!", id: result.rows[0].id });
   } catch (err) {
-    console.error("Erro no banco:", err);
-    res.status(500).json({ error: "Erro interno ao salvar configurações." });
+    console.error("Erro ao salvar:", err);
+    res.status(500).json({ error: "Erro interno no servidor." });
   }
 });
 
