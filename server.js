@@ -115,4 +115,58 @@ app.post('/clinica/config', verifyToken, isAdmin, async (req, res) => {
   }
 });
 
+// ==========================================
+// 📋 MÓDULO DE PACIENTES
+// ==========================================
+
+// 1. Listar pacientes (apenas da clínica do usuário logado)
+app.get('/pacientes', verifyToken, async (req, res) => {
+  try {
+    // Busca o clinic_id do usuário que está fazendo a requisição
+    const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
+    const clinicId = userResult.rows[0].clinic_id;
+
+    if (!clinicId) {
+      return res.status(400).json({ error: "Usuário não associado a uma clínica." });
+    }
+
+    // Busca apenas os pacientes dessa clínica
+    const pacientes = await pool.query(
+      'SELECT * FROM pacientes WHERE clinic_id = $1 ORDER BY nome_completo ASC',
+      [clinicId]
+    );
+
+    res.json(pacientes.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Erro ao buscar pacientes." });
+  }
+});
+
+// 2. Cadastrar novo paciente
+app.post('/pacientes', verifyToken, async (req, res) => {
+  const { nome_completo, cpf, rg, data_nascimento, telefone, endereco, alergias } = req.body;
+
+  try {
+    // Recupera o clinic_id do usuário logado
+    const userResult = await pool.query('SELECT clinic_id FROM users WHERE id = $1', [req.userId]);
+    const clinicId = userResult.rows[0].clinic_id;
+
+    const result = await pool.query(
+      `INSERT INTO pacientes (nome_completo, cpf, rg, data_nascimento, telefone, endereco, alergias, clinic_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [nome_completo, cpf, rg, data_nascimento, telefone, endereco, alergias, clinicId]
+    );
+
+    res.status(201).json({ message: "Paciente cadastrado com sucesso!", paciente: result.rows[0] });
+  } catch (err) {
+    if (err.code === '23505') { // Código de erro para CPF duplicado no Postgres
+      return res.status(400).json({ error: "Este CPF já está cadastrado." });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Erro ao cadastrar paciente." });
+  }
+});
+
 app.listen(process.env.PORT || 3000, () => console.log("📡 API Pronta!"));
